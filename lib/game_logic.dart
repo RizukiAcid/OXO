@@ -1,3 +1,6 @@
+import 'dart:math';
+import 'game_mode.dart';
+
 class GameLogic {
   List<String?> board = List.filled(9, null);
   String currentPlayer = 'X';
@@ -67,5 +70,85 @@ class GameLogic {
     winner = null;
     winningCells = [];
     isDraw = false;
+  }
+
+  /// Calculates the best move for the Bot ('O') based on difficulty
+  int getBotMove(BotDifficulty difficulty) {
+    List<int> availableMoves = [];
+    for (int i = 0; i < 9; i++) {
+      if (board[i] == null) availableMoves.add(i);
+    }
+
+    if (availableMoves.isEmpty) return -1;
+
+    final rand = Random();
+
+    // Easy: 70% random move
+    if (difficulty == BotDifficulty.easy && rand.nextDouble() < 0.70) {
+      return availableMoves[rand.nextInt(availableMoves.length)];
+    }
+
+    // Medium: 35% random move
+    if (difficulty == BotDifficulty.medium && rand.nextDouble() < 0.35) {
+      return availableMoves[rand.nextInt(availableMoves.length)];
+    }
+
+    // Hard / Unbeatable (or smart choice for Easy/Medium remaining cases)
+    int bestScore = -10000;
+    int bestMove = availableMoves.first;
+
+    for (int move in availableMoves) {
+      board[move] = 'O';
+      int score = _minimax(board, 0, false);
+      board[move] = null;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    return bestMove;
+  }
+
+  int _minimax(List<String?> tempBoard, int depth, bool isMaximizing) {
+    String? currentWinner = _checkWinner(tempBoard);
+    if (currentWinner == 'O') return 10 - depth;
+    if (currentWinner == 'X') return depth - 10;
+    if (tempBoard.every((cell) => cell != null)) return 0;
+
+    if (isMaximizing) {
+      int bestScore = -10000;
+      for (int i = 0; i < 9; i++) {
+        if (tempBoard[i] == null) {
+          tempBoard[i] = 'O';
+          int score = _minimax(tempBoard, depth + 1, false);
+          tempBoard[i] = null;
+          bestScore = max(bestScore, score);
+        }
+      }
+      return bestScore;
+    } else {
+      int bestScore = 10000;
+      for (int i = 0; i < 9; i++) {
+        if (tempBoard[i] == null) {
+          tempBoard[i] = 'X';
+          int score = _minimax(tempBoard, depth + 1, true);
+          tempBoard[i] = null;
+          bestScore = min(bestScore, score);
+        }
+      }
+      return bestScore;
+    }
+  }
+
+  String? _checkWinner(List<String?> b) {
+    for (final pattern in _winPatterns) {
+      final a = pattern[0], b1 = pattern[1], c = pattern[2];
+      if (b[a] != null && b[a] == b[b1] && b[b1] == b[c]) {
+        return b[a];
+      }
+    }
+    return null;
   }
 }

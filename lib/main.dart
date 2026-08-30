@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'game_screen.dart';
+import 'menu_screen.dart';
 
 void main() {
   runApp(const OXOApp());
@@ -21,7 +21,7 @@ class OXOApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      home: const GameScreen(),
+      home: const MenuScreen(),
     );
   }
 }
