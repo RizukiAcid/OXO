@@ -72,8 +72,8 @@ class GameLogic {
     isDraw = false;
   }
 
-  /// Calculates the best move for the Bot ('O') based on difficulty
-  int getBotMove(BotDifficulty difficulty) {
+  /// Calculates the best move for the Bot based on difficulty and assigned symbol
+  int getBotMove(BotDifficulty difficulty, String botSymbol) {
     List<int> availableMoves = [];
     for (int i = 0; i < 9; i++) {
       if (board[i] == null) availableMoves.add(i);
@@ -93,13 +93,20 @@ class GameLogic {
       return availableMoves[rand.nextInt(availableMoves.length)];
     }
 
+    // Opening move optimization for empty board
+    if (availableMoves.length == 9) {
+      final openings = [0, 2, 4, 6, 8];
+      return openings[rand.nextInt(openings.length)];
+    }
+
     // Hard / Unbeatable (or smart choice for Easy/Medium remaining cases)
+    final humanSymbol = botSymbol == 'X' ? 'O' : 'X';
     int bestScore = -10000;
     int bestMove = availableMoves.first;
 
     for (int move in availableMoves) {
-      board[move] = 'O';
-      int score = _minimax(board, 0, false);
+      board[move] = botSymbol;
+      int score = _minimax(board, 0, false, botSymbol, humanSymbol);
       board[move] = null;
 
       if (score > bestScore) {
@@ -111,18 +118,18 @@ class GameLogic {
     return bestMove;
   }
 
-  int _minimax(List<String?> tempBoard, int depth, bool isMaximizing) {
+  int _minimax(List<String?> tempBoard, int depth, bool isMaximizing, String botSymbol, String humanSymbol) {
     String? currentWinner = _checkWinner(tempBoard);
-    if (currentWinner == 'O') return 10 - depth;
-    if (currentWinner == 'X') return depth - 10;
+    if (currentWinner == botSymbol) return 10 - depth;
+    if (currentWinner == humanSymbol) return depth - 10;
     if (tempBoard.every((cell) => cell != null)) return 0;
 
     if (isMaximizing) {
       int bestScore = -10000;
       for (int i = 0; i < 9; i++) {
         if (tempBoard[i] == null) {
-          tempBoard[i] = 'O';
-          int score = _minimax(tempBoard, depth + 1, false);
+          tempBoard[i] = botSymbol;
+          int score = _minimax(tempBoard, depth + 1, false, botSymbol, humanSymbol);
           tempBoard[i] = null;
           bestScore = max(bestScore, score);
         }
@@ -132,8 +139,8 @@ class GameLogic {
       int bestScore = 10000;
       for (int i = 0; i < 9; i++) {
         if (tempBoard[i] == null) {
-          tempBoard[i] = 'X';
-          int score = _minimax(tempBoard, depth + 1, true);
+          tempBoard[i] = humanSymbol;
+          int score = _minimax(tempBoard, depth + 1, true, botSymbol, humanSymbol);
           tempBoard[i] = null;
           bestScore = min(bestScore, score);
         }

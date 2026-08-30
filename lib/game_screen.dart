@@ -6,11 +6,13 @@ import 'game_mode.dart';
 class GameScreen extends StatefulWidget {
   final GameMode gameMode;
   final BotDifficulty difficulty;
+  final String playerSymbol;
 
   const GameScreen({
     super.key,
     this.gameMode = GameMode.localMultiplayer,
     this.difficulty = BotDifficulty.medium,
+    this.playerSymbol = 'X',
   });
 
   @override
@@ -22,6 +24,8 @@ class _GameScreenState extends State<GameScreen>
   late GameLogic _game;
   bool _isBotThinking = false;
   Timer? _botTimer;
+
+  String get _botSymbol => widget.playerSymbol == 'X' ? 'O' : 'X';
 
   // Animation controllers
   late AnimationController _winnerBannerController;
@@ -90,6 +94,13 @@ class _GameScreenState extends State<GameScreen>
       _cellControllers.add(controller);
       _cellScales.add(scale);
     }
+
+    // If VS Bot and Bot moves first ('X'), schedule bot move
+    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scheduleBotMove();
+      });
+    }
   }
 
   @override
@@ -106,14 +117,14 @@ class _GameScreenState extends State<GameScreen>
   void _onCellTap(int index) {
     if (_isBotThinking) return;
     if (!_game.canPlay(index)) return;
-    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == 'O') return;
+    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) return;
 
     _executeMove(index);
 
     // If game mode is VS Bot and game is not over, trigger Bot response
     if (widget.gameMode == GameMode.vsBot &&
         !_game.isGameOver &&
-        _game.currentPlayer == 'O') {
+        _game.currentPlayer == _botSymbol) {
       _scheduleBotMove();
     }
   }
@@ -147,7 +158,7 @@ class _GameScreenState extends State<GameScreen>
         return;
       }
 
-      final botMove = _game.getBotMove(widget.difficulty);
+      final botMove = _game.getBotMove(widget.difficulty, _botSymbol);
       if (botMove != -1 && _game.canPlay(botMove)) {
         _executeMove(botMove);
       }
@@ -170,6 +181,10 @@ class _GameScreenState extends State<GameScreen>
     _boardShakeController.reset();
     for (final c in _cellControllers) {
       c.reset();
+    }
+
+    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) {
+      _scheduleBotMove();
     }
   }
 
@@ -258,7 +273,7 @@ class _GameScreenState extends State<GameScreen>
             ),
             child: Text(
               widget.gameMode == GameMode.vsBot
-                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()})'
+                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()} • ${widget.playerSymbol})'
                   : 'LOCAL 2P',
               style: TextStyle(
                 fontSize: 11,
@@ -273,8 +288,12 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildScoreBoard() {
-    final labelX = widget.gameMode == GameMode.vsBot ? 'YOU (X)' : 'PLAYER X';
-    final labelO = widget.gameMode == GameMode.vsBot ? 'BOT (O)' : 'PLAYER O';
+    final labelX = widget.gameMode == GameMode.vsBot
+        ? (widget.playerSymbol == 'X' ? 'YOU (X)' : 'BOT (X)')
+        : 'PLAYER X';
+    final labelO = widget.gameMode == GameMode.vsBot
+        ? (widget.playerSymbol == 'O' ? 'YOU (O)' : 'BOT (O)')
+        : 'PLAYER O';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -333,12 +352,12 @@ class _GameScreenState extends State<GameScreen>
   Widget _buildTurnIndicator() {
     if (_game.isGameOver) return const SizedBox(height: 24);
 
-    final isBotTurn = widget.gameMode == GameMode.vsBot && _game.currentPlayer == 'O';
+    final isBotTurn = widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol;
     final color = _playerColor(_game.currentPlayer);
     final text = isBotTurn
         ? "Bot is thinking..."
         : widget.gameMode == GameMode.vsBot
-            ? "Your turn (X)"
+            ? "Your turn (${widget.playerSymbol})"
             : "${_game.currentPlayer}'s turn";
 
     return AnimatedSwitcher(
@@ -468,7 +487,7 @@ class _GameScreenState extends State<GameScreen>
     if (_game.winner != null) {
       final color = _playerColor(_game.winner);
       final winText = widget.gameMode == GameMode.vsBot
-          ? (_game.winner == 'X' ? '🎉 You Won!' : '🤖 Bot Won!')
+          ? (_game.winner == widget.playerSymbol ? '🎉 You Won!' : '🤖 Bot Won!')
           : '🎉 Player ${_game.winner} wins!';
 
       return ScaleTransition(
