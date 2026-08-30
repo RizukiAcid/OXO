@@ -1,9 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'game_logic.dart';
+import 'game_mode.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  final GameMode gameMode;
+  final BotDifficulty difficulty;
+
+  const GameScreen({
+    super.key,
+    this.gameMode = GameMode.localMultiplayer,
+    this.difficulty = BotDifficulty.medium,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -12,6 +20,8 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen>
     with TickerProviderStateMixin {
   late GameLogic _game;
+  bool _isBotThinking = false;
+  Timer? _botTimer;
 
   // Animation controllers
   late AnimationController _winnerBannerController;
@@ -84,6 +94,7 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    _botTimer?.cancel();
     _winnerBannerController.dispose();
     _boardShakeController.dispose();
     for (final c in _cellControllers) {
@@ -93,8 +104,21 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _onCellTap(int index) {
+    if (_isBotThinking) return;
     if (!_game.canPlay(index)) return;
+    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == 'O') return;
 
+    _executeMove(index);
+
+    // If game mode is VS Bot and game is not over, trigger Bot response
+    if (widget.gameMode == GameMode.vsBot &&
+        !_game.isGameOver &&
+        _game.currentPlayer == 'O') {
+      _scheduleBotMove();
+    }
+  }
+
+  void _executeMove(int index) {
     setState(() {
       _game.play(index);
     });
@@ -109,9 +133,38 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
+  void _scheduleBotMove() {
+    setState(() {
+      _isBotThinking = true;
+    });
+
+    _botTimer?.cancel();
+    _botTimer = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted || _game.isGameOver) {
+        setState(() {
+          _isBotThinking = false;
+        });
+        return;
+      }
+
+      final botMove = _game.getBotMove(widget.difficulty);
+      if (botMove != -1 && _game.canPlay(botMove)) {
+        _executeMove(botMove);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isBotThinking = false;
+        });
+      }
+    });
+  }
+
   void _resetGame() {
+    _botTimer?.cancel();
     setState(() {
       _game.reset();
+      _isBotThinking = false;
     });
     _winnerBannerController.reset();
     _boardShakeController.reset();
@@ -136,13 +189,13 @@ class _GameScreenState extends State<GameScreen>
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 32),
-            _buildHeader(),
-            const SizedBox(height: 28),
+            const SizedBox(height: 16),
+            _buildTopAppBar(),
+            const SizedBox(height: 20),
             _buildScoreBoard(),
-            const SizedBox(height: 28),
-            _buildTurnIndicator(),
             const SizedBox(height: 24),
+            _buildTurnIndicator(),
+            const SizedBox(height: 20),
             Expanded(
               child: Center(
                 child: SlideTransition(
@@ -152,54 +205,80 @@ class _GameScreenState extends State<GameScreen>
               ),
             ),
             _buildStatusArea(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             _buildResetButton(),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'O',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.w900,
-            color: _accentO,
-            letterSpacing: -1,
+  Widget _buildTopAppBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Back to menu button
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _surfaceColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _lineColor, width: 1),
+              ),
+              child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+            ),
           ),
-        ),
-        Text(
-          'X',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.w900,
-            color: _accentX,
-            letterSpacing: -1,
+
+          // Logo / Title
+          Row(
+            children: [
+              Text('O', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _accentO)),
+              Text('X', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _accentX)),
+              Text('O', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _accentO)),
+            ],
           ),
-        ),
-        Text(
-          'O',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.w900,
-            color: _accentO,
-            letterSpacing: -1,
+
+          // Game mode badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: widget.gameMode == GameMode.vsBot
+                  ? _accentO.withAlpha(25)
+                  : _accentX.withAlpha(25),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: widget.gameMode == GameMode.vsBot ? _accentO : _accentX,
+                width: 1,
+              ),
+            ),
+            child: Text(
+              widget.gameMode == GameMode.vsBot
+                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()})'
+                  : 'LOCAL 2P',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: widget.gameMode == GameMode.vsBot ? _accentO : _accentX,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildScoreBoard() {
+    final labelX = widget.gameMode == GameMode.vsBot ? 'YOU (X)' : 'PLAYER X';
+    final labelO = widget.gameMode == GameMode.vsBot ? 'BOT (O)' : 'PLAYER O';
+
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 32),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(20),
@@ -208,11 +287,11 @@ class _GameScreenState extends State<GameScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildScoreItem('X', _game.scoreX, _accentX),
+          _buildScoreItem(labelX, _game.scoreX, _accentX),
           _buildDivider(),
           _buildScoreItem('DRAW', _game.scoreDraw, Colors.white54),
           _buildDivider(),
-          _buildScoreItem('O', _game.scoreO, _accentO),
+          _buildScoreItem(labelO, _game.scoreO, _accentO),
         ],
       ),
     );
@@ -224,17 +303,17 @@ class _GameScreenState extends State<GameScreen>
         Text(
           label,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
             color: color.withAlpha(180),
-            letterSpacing: 1.5,
+            letterSpacing: 1,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           '$score',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: 26,
             fontWeight: FontWeight.w800,
             color: color,
           ),
@@ -246,7 +325,7 @@ class _GameScreenState extends State<GameScreen>
   Widget _buildDivider() {
     return Container(
       width: 1,
-      height: 40,
+      height: 38,
       color: _lineColor,
     );
   }
@@ -254,25 +333,48 @@ class _GameScreenState extends State<GameScreen>
   Widget _buildTurnIndicator() {
     if (_game.isGameOver) return const SizedBox(height: 24);
 
+    final isBotTurn = widget.gameMode == GameMode.vsBot && _game.currentPlayer == 'O';
     final color = _playerColor(_game.currentPlayer);
+    final text = isBotTurn
+        ? "Bot is thinking..."
+        : widget.gameMode == GameMode.vsBot
+            ? "Your turn (X)"
+            : "${_game.currentPlayer}'s turn";
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: Container(
-        key: ValueKey(_game.currentPlayer),
+        key: ValueKey("${_game.currentPlayer}_$isBotTurn"),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
           color: color.withAlpha(25),
           borderRadius: BorderRadius.circular(30),
           border: Border.all(color: color.withAlpha(80), width: 1),
         ),
-        child: Text(
-          "${_game.currentPlayer}'s turn",
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: color,
-            letterSpacing: 0.5,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isBotTurn) ...[
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -365,6 +467,10 @@ class _GameScreenState extends State<GameScreen>
   Widget _buildStatusArea() {
     if (_game.winner != null) {
       final color = _playerColor(_game.winner);
+      final winText = widget.gameMode == GameMode.vsBot
+          ? (_game.winner == 'X' ? '🎉 You Won!' : '🤖 Bot Won!')
+          : '🎉 Player ${_game.winner} wins!';
+
       return ScaleTransition(
         scale: _winnerBannerAnimation,
         child: Container(
@@ -376,7 +482,7 @@ class _GameScreenState extends State<GameScreen>
             border: Border.all(color: color.withAlpha(100), width: 1.5),
           ),
           child: Text(
-            '🎉 Player ${_game.winner} wins!',
+            winText,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
