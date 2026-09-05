@@ -25,7 +25,10 @@ class _GameScreenState extends State<GameScreen>
   bool _isBotThinking = false;
   Timer? _botTimer;
 
-  String get _botSymbol => widget.playerSymbol == 'X' ? 'O' : 'X';
+  late String _playerSymbol;
+  String get _botSymbol => _playerSymbol == 'X' ? 'O' : 'X';
+  int _humanScore = 0;
+  int _botScore = 0;
 
   // Animation controllers
   late AnimationController _winnerBannerController;
@@ -48,6 +51,7 @@ class _GameScreenState extends State<GameScreen>
   void initState() {
     super.initState();
     _game = GameLogic();
+    _playerSymbol = widget.playerSymbol;
 
     // Winner banner animation
     _winnerBannerController = AnimationController(
@@ -130,6 +134,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _executeMove(int index) {
+    final wasGameOver = _game.isGameOver;
     setState(() {
       _game.play(index);
     });
@@ -137,9 +142,16 @@ class _GameScreenState extends State<GameScreen>
     // Animate the cell
     _cellControllers[index].forward(from: 0);
 
-    if (_game.winner != null) {
+    if (!wasGameOver && _game.winner != null) {
+      if (widget.gameMode == GameMode.vsBot) {
+        if (_game.winner == _playerSymbol) {
+          _humanScore++;
+        } else {
+          _botScore++;
+        }
+      }
       _winnerBannerController.forward(from: 0);
-    } else if (_game.isDraw) {
+    } else if (!wasGameOver && _game.isDraw) {
       _boardShakeController.forward(from: 0);
     }
   }
@@ -173,7 +185,11 @@ class _GameScreenState extends State<GameScreen>
 
   void _resetGame() {
     _botTimer?.cancel();
+    final wasGameOver = _game.isGameOver;
     setState(() {
+      if (widget.gameMode == GameMode.vsBot && wasGameOver) {
+        _playerSymbol = _playerSymbol == 'X' ? 'O' : 'X';
+      }
       _game.reset();
       _isBotThinking = false;
     });
@@ -198,14 +214,23 @@ class _GameScreenState extends State<GameScreen>
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final boardSize = (size.width < size.height ? size.width : size.height) * 0.88;
+    final nextSymbol = widget.gameMode == GameMode.vsBot && _game.isGameOver
+        ? (_playerSymbol == 'X' ? 'O' : 'X')
+        : _playerSymbol;
 
-    return Scaffold(
-      backgroundColor: _bgColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            _buildTopAppBar(),
+    return PopScope<String?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        Navigator.pop(context, widget.gameMode == GameMode.vsBot ? nextSymbol : null);
+      },
+      child: Scaffold(
+        backgroundColor: _bgColor,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              _buildTopAppBar(nextSymbol),
             const SizedBox(height: 20),
             _buildScoreBoard(),
             const SizedBox(height: 24),
@@ -226,10 +251,10 @@ class _GameScreenState extends State<GameScreen>
           ],
         ),
       ),
-    );
+    ));
   }
 
-  Widget _buildTopAppBar() {
+  Widget _buildTopAppBar(String nextSymbol) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -237,7 +262,10 @@ class _GameScreenState extends State<GameScreen>
         children: [
           // Back to menu button
           IconButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(
+              context,
+              widget.gameMode == GameMode.vsBot ? nextSymbol : null,
+            ),
             icon: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -263,22 +291,26 @@ class _GameScreenState extends State<GameScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: widget.gameMode == GameMode.vsBot
-                  ? _accentO.withAlpha(25)
+                  ? _playerColor(_playerSymbol).withAlpha(25)
                   : _accentX.withAlpha(25),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: widget.gameMode == GameMode.vsBot ? _accentO : _accentX,
+                color: widget.gameMode == GameMode.vsBot
+                    ? _playerColor(_playerSymbol)
+                    : _accentX,
                 width: 1,
               ),
             ),
             child: Text(
               widget.gameMode == GameMode.vsBot
-                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()} • ${widget.playerSymbol})'
+                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()} • $_playerSymbol)'
                   : 'LOCAL 2P',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: widget.gameMode == GameMode.vsBot ? _accentO : _accentX,
+                color: widget.gameMode == GameMode.vsBot
+                    ? _playerColor(_playerSymbol)
+                    : _accentX,
               ),
             ),
           ),
@@ -288,12 +320,15 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildScoreBoard() {
-    final labelX = widget.gameMode == GameMode.vsBot
-        ? (widget.playerSymbol == 'X' ? 'YOU (X)' : 'BOT (X)')
-        : 'PLAYER X';
-    final labelO = widget.gameMode == GameMode.vsBot
-        ? (widget.playerSymbol == 'O' ? 'YOU (O)' : 'BOT (O)')
-        : 'PLAYER O';
+    final isVsBot = widget.gameMode == GameMode.vsBot;
+
+    final labelLeft = isVsBot ? 'YOU ($_playerSymbol)' : 'PLAYER X';
+    final scoreLeft = isVsBot ? _humanScore : _game.scoreX;
+    final colorLeft = isVsBot ? _playerColor(_playerSymbol) : _accentX;
+
+    final labelRight = isVsBot ? 'BOT ($_botSymbol)' : 'PLAYER O';
+    final scoreRight = isVsBot ? _botScore : _game.scoreO;
+    final colorRight = isVsBot ? _playerColor(_botSymbol) : _accentO;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -306,11 +341,11 @@ class _GameScreenState extends State<GameScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildScoreItem(labelX, _game.scoreX, _accentX),
+          _buildScoreItem(labelLeft, scoreLeft, colorLeft),
           _buildDivider(),
           _buildScoreItem('DRAW', _game.scoreDraw, Colors.white54),
           _buildDivider(),
-          _buildScoreItem(labelO, _game.scoreO, _accentO),
+          _buildScoreItem(labelRight, scoreRight, colorRight),
         ],
       ),
     );
@@ -357,7 +392,7 @@ class _GameScreenState extends State<GameScreen>
     final text = isBotTurn
         ? "Bot is thinking..."
         : widget.gameMode == GameMode.vsBot
-            ? "Your turn (${widget.playerSymbol})"
+            ? "Your turn ($_playerSymbol)"
             : "${_game.currentPlayer}'s turn";
 
     return AnimatedSwitcher(
@@ -430,6 +465,8 @@ class _GameScreenState extends State<GameScreen>
     final showBottom = row < 2;
 
     return GestureDetector(
+      key: ValueKey('cell_$index'),
+      behavior: HitTestBehavior.opaque,
       onTap: () => _onCellTap(index),
       child: Container(
         decoration: BoxDecoration(
@@ -487,7 +524,7 @@ class _GameScreenState extends State<GameScreen>
     if (_game.winner != null) {
       final color = _playerColor(_game.winner);
       final winText = widget.gameMode == GameMode.vsBot
-          ? (_game.winner == widget.playerSymbol ? '🎉 You Won!' : '🤖 Bot Won!')
+          ? (_game.winner == _playerSymbol ? '🎉 You Won!' : '🤖 Bot Won!')
           : '🎉 Player ${_game.winner} wins!';
 
       return ScaleTransition(
@@ -533,7 +570,21 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildResetButton() {
+    final isVsBot = widget.gameMode == GameMode.vsBot;
+    final String buttonText;
+    if (_game.isGameOver) {
+      if (isVsBot) {
+        buttonText = 'Next Match (${_playerSymbol == 'X' ? 'Play 2nd' : 'Play 1st'})';
+      } else {
+        buttonText = 'Next Match';
+      }
+    } else {
+      buttonText = 'New Game';
+    }
+
     return GestureDetector(
+      key: const ValueKey('reset_button'),
+      behavior: HitTestBehavior.opaque,
       onTap: _resetGame,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 32),
@@ -553,18 +604,21 @@ class _GameScreenState extends State<GameScreen>
             ),
           ],
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Text(
-              'New Game',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                letterSpacing: 0.5,
+            const Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                buttonText,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ],

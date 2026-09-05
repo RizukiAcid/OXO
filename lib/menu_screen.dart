@@ -41,8 +41,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _startGame(GameMode mode) {
-    Navigator.of(context).push(
+  void _startGame(GameMode mode) async {
+    final nextSymbol = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (context) => GameScreen(
           gameMode: mode,
@@ -51,6 +51,11 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
         ),
       ),
     );
+    if (nextSymbol != null && mounted) {
+      setState(() {
+        _playerSymbol = nextSymbol;
+      });
+    }
   }
 
   void _showDifficultyDialog() {
