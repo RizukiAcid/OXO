@@ -311,18 +311,29 @@ class UltimateGameLogic {
       int botCount = 0;
       int humanCount = 0;
       for (int i = 0; i < 3; i++) {
-        if (board[pattern[i]] == bot) botCount++;
-        else if (board[pattern[i]] == human) humanCount++;
+        if (board[pattern[i]] == bot) {
+          botCount++;
+        } else if (board[pattern[i]] == human) {
+          humanCount++;
+        }
       }
       
       if (botCount > 0 && humanCount == 0) {
-        if (botCount == 1) score += 1;
-        else if (botCount == 2) score += 10;
-        else if (botCount == 3) score += 100;
+        if (botCount == 1) {
+          score += 1;
+        } else if (botCount == 2) {
+          score += 10;
+        } else if (botCount == 3) {
+          score += 100;
+        }
       } else if (humanCount > 0 && botCount == 0) {
-        if (humanCount == 1) score -= 1;
-        else if (humanCount == 2) score -= 10;
-        else if (humanCount == 3) score -= 100;
+        if (humanCount == 1) {
+          score -= 1;
+        } else if (humanCount == 2) {
+          score -= 10;
+        } else if (humanCount == 3) {
+          score -= 100;
+        }
       }
     }
     return score;

@@ -19,6 +19,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
   BotDifficulty _selectedDifficulty = BotDifficulty.medium;
   String _playerSymbol = 'X'; // 'X' = Play 1st, 'O' = Play 2nd
+  bool _isUltimateVsBot = false;
 
   late AnimationController _headerController;
   late Animation<double> _headerScale;
@@ -68,7 +69,219 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _showDifficultyDialog(GameMode mode) {
+  void _showLocalModeDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return SingleChildScrollView(
+          child: Container(
+            padding: EdgeInsets.only(
+              left: 28,
+              right: 28,
+              top: 28,
+              bottom: 28 + MediaQuery.of(context).viewInsets.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: _surfaceColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(color: _lineColor, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(120),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _accentX.withAlpha(30),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.people_alt_rounded, color: _accentX, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Local Multiplayer',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Select game grid for 2 players',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                const Text(
+                  'CHOOSE GAME VARIANT',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                    color: Colors.white38,
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Option 1: Classic 3x3
+                _buildVariantSelectCard(
+                  title: 'Classic Tic Tac Toe',
+                  subtitle: 'Standard 3×3 grid • Fast & casual match',
+                  badgeText: 'Classic 3×3',
+                  badgeColor: _accentX,
+                  icon: Icons.grid_3x3_rounded,
+                  accentColor: _accentX,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startGame(GameMode.localMultiplayer);
+                  },
+                ),
+                const SizedBox(height: 14),
+
+                // Option 2: Ultimate 9x9
+                _buildVariantSelectCard(
+                  title: 'Ultimate Tic Tac Toe',
+                  subtitle: '9 boards in one • Advanced strategic depth',
+                  badgeText: 'Epic 9×9',
+                  badgeColor: const Color(0xFF00E676),
+                  icon: Icons.grid_on_rounded,
+                  accentColor: const Color(0xFF00E676),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _startGame(GameMode.ultimateLocalMultiplayer);
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVariantSelectCard({
+    required String title,
+    required String subtitle,
+    required String badgeText,
+    required Color badgeColor,
+    required IconData icon,
+    required Color accentColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        decoration: BoxDecoration(
+          color: _bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _lineColor, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withAlpha(20),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: accentColor.withAlpha(25),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: accentColor.withAlpha(80), width: 1.5),
+              ),
+              child: Icon(icon, color: accentColor, size: 26),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: badgeColor.withAlpha(30),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: badgeColor.withAlpha(90), width: 1),
+                        ),
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: badgeColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white24,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBotDifficultyDialog() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -111,31 +324,86 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                         child: const Icon(Icons.smart_toy_rounded, color: _accentO, size: 24),
                       ),
                       const SizedBox(width: 14),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'VS Bot Settings',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'VS Bot Settings',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
-                          Text(
-                            'Configure difficulty & turn order',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white54,
+                            Text(
+                              'Configure variant, difficulty & turn order',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.white54,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
 
-                  // Section 1: Play Order Selection (Play 1st as X or Play 2nd as O)
+                  // Section 1: Game Variant Selection (Classic 3x3 vs Ultimate 9x9)
+                  const Text(
+                    'GAME VARIANT',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5,
+                      color: Colors.white38,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildSideCard(
+                          symbol: '3×3',
+                          title: 'Classic',
+                          subtitle: 'Standard grid',
+                          color: _accentX,
+                          isSelected: !_isUltimateVsBot,
+                          onTap: () {
+                            setModalState(() {
+                              _isUltimateVsBot = false;
+                            });
+                            setState(() {
+                              _isUltimateVsBot = false;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildSideCard(
+                          symbol: '9×9',
+                          title: 'Ultimate',
+                          subtitle: '9 boards in 1',
+                          color: const Color(0xFF00E676),
+                          isSelected: _isUltimateVsBot,
+                          onTap: () {
+                            setModalState(() {
+                              _isUltimateVsBot = true;
+                            });
+                            setState(() {
+                              _isUltimateVsBot = true;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Section 2: Play Order Selection (Play 1st as X or Play 2nd as O)
                   const Text(
                     'PLAY ORDER',
                     style: TextStyle(
@@ -188,7 +456,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
                   const SizedBox(height: 24),
 
-                  // Section 2: Bot Difficulty Selection
+                  // Section 3: Bot Difficulty Selection
                   const Text(
                     'BOT DIFFICULTY',
                     style: TextStyle(
@@ -267,7 +535,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _startGame(mode);
+                        _startGame(_isUltimateVsBot ? GameMode.ultimateVsBot : GameMode.vsBot);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _accentO,
@@ -328,12 +596,18 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
-                child: Text(
-                  symbol,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: color,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: Text(
+                      symbol,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -496,11 +770,11 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                     // Option 1: Local Multiplayer
                     _buildModeCard(
                       title: 'Local Multiplayer',
-                      subtitle: 'Pass & Play with a friend locally',
+                      subtitle: 'Pass & Play with a friend (Classic & Ultimate)',
                       icon: Icons.people_alt_rounded,
                       gradientColors: [_accentX, const Color(0xFF8B5CF6)],
                       badgeText: '2 Players',
-                      onTap: () => _startGame(GameMode.localMultiplayer),
+                      onTap: _showLocalModeDialog,
                     ),
 
                     const SizedBox(height: 20),
@@ -513,33 +787,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                       gradientColors: [_accentO, const Color(0xFFFF8E53)],
                       badgeText: '${_selectedDifficulty.label} • $_playerSymbol',
                       badgeColor: _accentO,
-                      onTap: () => _showDifficultyDialog(GameMode.vsBot),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Option 3: Ultimate Local Multiplayer
-                    _buildModeCard(
-                      title: 'Ultimate TTT',
-                      subtitle: 'Play 9 boards at once locally',
-                      icon: Icons.grid_on_rounded,
-                      gradientColors: [const Color(0xFF4CAF50), const Color(0xFF009688)],
-                      badgeText: 'Epic 2P',
-                      badgeColor: const Color(0xFF4CAF50),
-                      onTap: () => _startGame(GameMode.ultimateLocalMultiplayer),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Option 4: Ultimate VS Bot
-                    _buildModeCard(
-                      title: 'Ultimate TTT vs Bot',
-                      subtitle: 'The ultimate challenge (${_selectedDifficulty.label})',
-                      icon: Icons.memory_rounded,
-                      gradientColors: [const Color(0xFFE91E63), const Color(0xFF9C27B0)],
-                      badgeText: 'Epic VS',
-                      badgeColor: const Color(0xFFE91E63),
-                      onTap: () => _showDifficultyDialog(GameMode.ultimateVsBot),
+                      onTap: _showBotDifficultyDialog,
                     ),
                   ],
                 ),
