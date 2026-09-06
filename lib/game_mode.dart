@@ -1,6 +1,8 @@
 enum GameMode {
   localMultiplayer,
   vsBot,
+  ultimateLocalMultiplayer,
+  ultimateVsBot,
 }
 
 enum BotDifficulty {

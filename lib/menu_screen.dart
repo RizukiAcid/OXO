@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'game_mode.dart';
 import 'game_screen.dart';
+import 'ultimate_game_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -42,14 +43,23 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   }
 
   void _startGame(GameMode mode) async {
+    Widget targetScreen;
+    if (mode == GameMode.ultimateLocalMultiplayer || mode == GameMode.ultimateVsBot) {
+      targetScreen = UltimateGameScreen(
+        gameMode: mode,
+        difficulty: _selectedDifficulty,
+        playerSymbol: _playerSymbol,
+      );
+    } else {
+      targetScreen = GameScreen(
+        gameMode: mode,
+        difficulty: _selectedDifficulty,
+        playerSymbol: _playerSymbol,
+      );
+    }
+    
     final nextSymbol = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (context) => GameScreen(
-          gameMode: mode,
-          difficulty: _selectedDifficulty,
-          playerSymbol: _playerSymbol,
-        ),
-      ),
+      MaterialPageRoute(builder: (context) => targetScreen),
     );
     if (nextSymbol != null && mounted) {
       setState(() {
@@ -58,7 +68,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _showDifficultyDialog() {
+  void _showDifficultyDialog(GameMode mode) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -257,7 +267,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _startGame(GameMode.vsBot);
+                        _startGame(mode);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _accentO,
@@ -503,7 +513,33 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                       gradientColors: [_accentO, const Color(0xFFFF8E53)],
                       badgeText: '${_selectedDifficulty.label} • $_playerSymbol',
                       badgeColor: _accentO,
-                      onTap: _showDifficultyDialog,
+                      onTap: () => _showDifficultyDialog(GameMode.vsBot),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Option 3: Ultimate Local Multiplayer
+                    _buildModeCard(
+                      title: 'Ultimate TTT',
+                      subtitle: 'Play 9 boards at once locally',
+                      icon: Icons.grid_on_rounded,
+                      gradientColors: [const Color(0xFF4CAF50), const Color(0xFF009688)],
+                      badgeText: 'Epic 2P',
+                      badgeColor: const Color(0xFF4CAF50),
+                      onTap: () => _startGame(GameMode.ultimateLocalMultiplayer),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Option 4: Ultimate VS Bot
+                    _buildModeCard(
+                      title: 'Ultimate TTT vs Bot',
+                      subtitle: 'The ultimate challenge (${_selectedDifficulty.label})',
+                      icon: Icons.memory_rounded,
+                      gradientColors: [const Color(0xFFE91E63), const Color(0xFF9C27B0)],
+                      badgeText: 'Epic VS',
+                      badgeColor: const Color(0xFFE91E63),
+                      onTap: () => _showDifficultyDialog(GameMode.ultimateVsBot),
                     ),
                   ],
                 ),
