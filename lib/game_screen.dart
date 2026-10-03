@@ -7,12 +7,14 @@ class GameScreen extends StatefulWidget {
   final GameMode gameMode;
   final BotDifficulty difficulty;
   final String playerSymbol;
+  final BoardRule initialRule;
 
   const GameScreen({
     super.key,
     this.gameMode = GameMode.localMultiplayer,
     this.difficulty = BotDifficulty.medium,
     this.playerSymbol = 'X',
+    this.initialRule = BoardRule.classic,
   });
 
   @override
@@ -37,6 +39,10 @@ class _GameScreenState extends State<GameScreen>
   late AnimationController _boardShakeController;
   late Animation<Offset> _boardShakeAnimation;
 
+  // Subtle pulse animation for oldest piece warning in FIFO mode
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
   // Per-cell scale animations
   final List<AnimationController> _cellControllers = [];
   final List<Animation<double>> _cellScales = [];
@@ -50,7 +56,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void initState() {
     super.initState();
-    _game = GameLogic();
+    _game = GameLogic(rule: widget.initialRule);
     _playerSymbol = widget.playerSymbol;
 
     // Winner banner animation
@@ -86,6 +92,16 @@ class _GameScreenState extends State<GameScreen>
       curve: Curves.easeInOut,
     ));
 
+    // Pulse animation for FIFO oldest piece alert
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+      value: 0.5,
+    );
+    _pulseAnimation = Tween<double>(begin: 0.35, end: 0.70).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     // Cell animations
     for (int i = 0; i < 9; i++) {
       final controller = AnimationController(
@@ -110,6 +126,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void dispose() {
     _botTimer?.cancel();
+    _pulseController.dispose();
     _winnerBannerController.dispose();
     _boardShakeController.dispose();
     for (final c in _cellControllers) {
@@ -139,8 +156,15 @@ class _GameScreenState extends State<GameScreen>
       _game.play(index);
     });
 
-    // Animate the cell
+    // Animate the newly placed cell
     _cellControllers[index].forward(from: 0);
+
+    // If a piece was evicted in FIFO mode, reset its animation controller
+    if (_game.lastEvictedIndex != null) {
+      _cellControllers[_game.lastEvictedIndex!].reset();
+    }
+
+    _updatePulseState();
 
     if (!wasGameOver && _game.winner != null) {
       if (widget.gameMode == GameMode.vsBot) {
@@ -153,6 +177,22 @@ class _GameScreenState extends State<GameScreen>
       _winnerBannerController.forward(from: 0);
     } else if (!wasGameOver && _game.isDraw) {
       _boardShakeController.forward(from: 0);
+    }
+  }
+
+  void _updatePulseState() {
+    final shouldPulse = _game.rule == BoardRule.fifo &&
+        !_game.isGameOver &&
+        (_game.queueX.length >= 3 || _game.queueO.length >= 3);
+    if (shouldPulse) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else {
+      if (_pulseController.isAnimating) {
+        _pulseController.stop();
+      }
+      _pulseController.value = 0.5;
     }
   }
 
@@ -198,6 +238,26 @@ class _GameScreenState extends State<GameScreen>
     for (final c in _cellControllers) {
       c.reset();
     }
+    _updatePulseState();
+
+    if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) {
+      _scheduleBotMove();
+    }
+  }
+
+  void _onModeToggle(BoardRule newRule) {
+    if (_game.rule == newRule) return;
+    _botTimer?.cancel();
+    setState(() {
+      _game.switchRule(newRule);
+      _isBotThinking = false;
+    });
+    _winnerBannerController.reset();
+    _boardShakeController.reset();
+    for (final c in _cellControllers) {
+      c.reset();
+    }
+    _updatePulseState();
 
     if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) {
       _scheduleBotMove();
@@ -229,32 +289,36 @@ class _GameScreenState extends State<GameScreen>
         body: SafeArea(
           child: Column(
             children: [
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               _buildTopAppBar(nextSymbol),
-            const SizedBox(height: 20),
-            _buildScoreBoard(),
-            const SizedBox(height: 24),
-            _buildTurnIndicator(),
-            const SizedBox(height: 20),
-            Expanded(
-              child: Center(
-                child: SlideTransition(
-                  position: _boardShakeAnimation,
-                  child: _buildBoard(boardSize),
+              const SizedBox(height: 14),
+              _buildModeToggle(),
+              const SizedBox(height: 14),
+              _buildScoreBoard(),
+              const SizedBox(height: 16),
+              _buildTurnIndicator(),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Center(
+                  child: SlideTransition(
+                    position: _boardShakeAnimation,
+                    child: _buildBoard(boardSize),
+                  ),
                 ),
               ),
-            ),
-            _buildStatusArea(),
-            const SizedBox(height: 20),
-            _buildResetButton(),
-            const SizedBox(height: 28),
-          ],
+              _buildStatusArea(),
+              const SizedBox(height: 16),
+              _buildResetButton(),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
-    ));
+    );
   }
 
   Widget _buildTopAppBar(String nextSymbol) {
+    final ruleTag = _game.rule == BoardRule.fifo ? ' • FIFO' : '';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -303,8 +367,8 @@ class _GameScreenState extends State<GameScreen>
             ),
             child: Text(
               widget.gameMode == GameMode.vsBot
-                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()} • $_playerSymbol)'
-                  : 'LOCAL 2P',
+                  ? 'VS BOT (${widget.difficulty.label.toUpperCase()} • $_playerSymbol$ruleTag)'
+                  : 'LOCAL 2P$ruleTag',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -315,6 +379,93 @@ class _GameScreenState extends State<GameScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeToggle() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _lineColor, width: 1),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildToggleOption(
+              label: 'Classic',
+              icon: Icons.grid_3x3_rounded,
+              isSelected: _game.rule == BoardRule.classic,
+              onTap: () => _onModeToggle(BoardRule.classic),
+            ),
+          ),
+          Expanded(
+            child: _buildToggleOption(
+              label: '3-Piece FIFO',
+              icon: Icons.all_inclusive_rounded,
+              isSelected: _game.rule == BoardRule.fifo,
+              onTap: () => _onModeToggle(BoardRule.fifo),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleOption({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final keySuffix = label.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+    return GestureDetector(
+      key: ValueKey('toggle_$keySuffix'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _accentX.withAlpha(45) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? _accentX : Colors.transparent,
+            width: 1.5,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: _accentX.withAlpha(50),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? Colors.white : Colors.white54,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.white60,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -389,22 +540,29 @@ class _GameScreenState extends State<GameScreen>
 
     final isBotTurn = widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol;
     final color = _playerColor(_game.currentPlayer);
-    final text = isBotTurn
-        ? "Bot is thinking..."
-        : widget.gameMode == GameMode.vsBot
-            ? "Your turn ($_playerSymbol)"
-            : "${_game.currentPlayer}'s turn";
+    final has3Pieces = _game.rule == BoardRule.fifo && _game.activeQueue.length >= 3;
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        key: ValueKey("${_game.currentPlayer}_$isBotTurn"),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withAlpha(25),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: color.withAlpha(80), width: 1),
-        ),
+    final String text;
+    if (isBotTurn) {
+      text = has3Pieces ? "Bot is thinking (evicting oldest)..." : "Bot is thinking...";
+    } else if (widget.gameMode == GameMode.vsBot) {
+      text = has3Pieces
+          ? "Your turn ($_playerSymbol) • Next move evicts oldest"
+          : "Your turn ($_playerSymbol)";
+    } else {
+      text = has3Pieces
+          ? "${_game.currentPlayer}'s turn • Next move evicts oldest"
+          : "${_game.currentPlayer}'s turn";
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: color.withAlpha(80), width: 1),
+      ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -419,39 +577,46 @@ class _GameScreenState extends State<GameScreen>
               ),
               const SizedBox(width: 10),
             ],
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color,
-                letterSpacing: 0.5,
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: has3Pieces ? 12 : 14,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                  letterSpacing: 0.5,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildBoard(double size) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Column(
-        children: List.generate(3, (row) {
-          return Expanded(
-            child: Row(
-              children: List.generate(3, (col) {
-                final index = row * 3 + col;
-                return Expanded(
-                  child: _buildCell(index, row, col),
-                );
-              }),
-            ),
-          );
-        }),
-      ),
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, _) {
+        return SizedBox(
+          width: size,
+          height: size,
+          child: Column(
+            children: List.generate(3, (row) {
+              return Expanded(
+                child: Row(
+                  children: List.generate(3, (col) {
+                    final index = row * 3 + col;
+                    return Expanded(
+                      child: _buildCell(index, row, col),
+                    );
+                  }),
+                ),
+              );
+            }),
+          ),
+        );
+      },
     );
   }
 
@@ -459,6 +624,10 @@ class _GameScreenState extends State<GameScreen>
     final value = _game.board[index];
     final isWinCell = _game.winningCells.contains(index);
     final color = _playerColor(value);
+
+    // Oldest piece indicators in FIFO mode
+    final isOldest = _game.isOldestPiece(index);
+    final isCurrentOldest = _game.isCurrentPlayerOldest(index);
 
     // Border logic for grid lines
     final showRight = col < 2;
@@ -480,31 +649,85 @@ class _GameScreenState extends State<GameScreen>
           ),
           color: isWinCell
               ? color.withAlpha(25)
-              : Colors.transparent,
+              : (isOldest && !_game.isGameOver)
+                  ? color.withAlpha(isCurrentOldest ? 18 : 8)
+                  : Colors.transparent,
         ),
-        child: Center(
-          child: value != null
-              ? ScaleTransition(
-                  scale: _cellScales[index],
-                  child: _buildSymbol(value, isWinCell),
-                )
-              : _game.isGameOver
-                  ? const SizedBox.shrink()
-                  : _buildEmptyHint(),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Warning badge on oldest piece
+            if (isOldest && !_game.isGameOver && value != null)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(isCurrentOldest ? 45 : 20),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: color.withAlpha(isCurrentOldest ? 160 : 70),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 9,
+                        color: color.withAlpha(isCurrentOldest ? 240 : 140),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        isCurrentOldest ? 'NEXT' : '3RD',
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          color: color.withAlpha(isCurrentOldest ? 240 : 140),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            Center(
+              child: value != null
+                  ? ScaleTransition(
+                      scale: _cellScales[index],
+                      child: _buildSymbol(value, isWinCell, isOldest, isCurrentOldest),
+                    )
+                  : _game.isGameOver
+                      ? const SizedBox.shrink()
+                      : _buildEmptyHint(),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSymbol(String value, bool isWinCell) {
+  Widget _buildSymbol(String value, bool isWinCell, bool isOldest, bool isCurrentOldest) {
     final color = _playerColor(value);
-    return Text(
-      value,
-      style: TextStyle(
-        fontSize: 56,
-        fontWeight: FontWeight.w800,
-        color: isWinCell ? color : color.withAlpha(230),
-        height: 1,
+    final double opacity = isWinCell
+        ? 1.0
+        : isCurrentOldest
+            ? _pulseAnimation.value
+            : (isOldest ? 0.4 : 0.95);
+
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: Text(
+        value,
+        style: TextStyle(
+          fontSize: 56,
+          fontWeight: FontWeight.w800,
+          color: color,
+          height: 1,
+        ),
       ),
     );
   }
@@ -513,7 +736,7 @@ class _GameScreenState extends State<GameScreen>
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         shape: BoxShape.circle,
         color: _lineColor,
       ),

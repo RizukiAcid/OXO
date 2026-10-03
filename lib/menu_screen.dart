@@ -3,6 +3,12 @@ import 'game_mode.dart';
 import 'game_screen.dart';
 import 'ultimate_game_screen.dart';
 
+enum BotGameVariant {
+  classic,
+  fifo,
+  ultimate,
+}
+
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
 
@@ -19,7 +25,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
   BotDifficulty _selectedDifficulty = BotDifficulty.medium;
   String _playerSymbol = 'X'; // 'X' = Play 1st, 'O' = Play 2nd
-  bool _isUltimateVsBot = false;
+  BotGameVariant _botGameVariant = BotGameVariant.classic;
 
   late AnimationController _headerController;
   late Animation<double> _headerScale;
@@ -43,7 +49,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _startGame(GameMode mode) async {
+  void _startGame(GameMode mode, {BoardRule initialRule = BoardRule.classic}) async {
     Widget targetScreen;
     if (mode == GameMode.ultimateLocalMultiplayer || mode == GameMode.ultimateVsBot) {
       targetScreen = UltimateGameScreen(
@@ -56,6 +62,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
         gameMode: mode,
         difficulty: _selectedDifficulty,
         playerSymbol: _playerSymbol,
+        initialRule: initialRule,
       );
     }
     
@@ -151,7 +158,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                 // Option 1: Classic 3x3
                 _buildVariantSelectCard(
                   title: 'Classic Tic Tac Toe',
-                  subtitle: 'Standard 3×3 grid • Fast & casual match',
+                  subtitle: 'Standard 3×3 grid • Fast & casual match (with 3-Piece FIFO mode)',
                   badgeText: 'Classic 3×3',
                   badgeColor: _accentX,
                   icon: Icons.grid_3x3_rounded,
@@ -369,13 +376,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                           title: 'Classic',
                           subtitle: 'Standard grid',
                           color: _accentX,
-                          isSelected: !_isUltimateVsBot,
+                          isSelected: _botGameVariant == BotGameVariant.classic,
                           onTap: () {
                             setModalState(() {
-                              _isUltimateVsBot = false;
+                              _botGameVariant = BotGameVariant.classic;
                             });
                             setState(() {
-                              _isUltimateVsBot = false;
+                              _botGameVariant = BotGameVariant.classic;
                             });
                           },
                         ),
@@ -387,13 +394,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                           title: 'Ultimate',
                           subtitle: '9 boards in 1',
                           color: const Color(0xFF00E676),
-                          isSelected: _isUltimateVsBot,
+                          isSelected: _botGameVariant == BotGameVariant.ultimate,
                           onTap: () {
                             setModalState(() {
-                              _isUltimateVsBot = true;
+                              _botGameVariant = BotGameVariant.ultimate;
                             });
                             setState(() {
-                              _isUltimateVsBot = true;
+                              _botGameVariant = BotGameVariant.ultimate;
                             });
                           },
                         ),
@@ -535,7 +542,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _startGame(_isUltimateVsBot ? GameMode.ultimateVsBot : GameMode.vsBot);
+                        if (_botGameVariant == BotGameVariant.ultimate) {
+                          _startGame(GameMode.ultimateVsBot);
+                        } else if (_botGameVariant == BotGameVariant.fifo) {
+                          _startGame(GameMode.vsBot, initialRule: BoardRule.fifo);
+                        } else {
+                          _startGame(GameMode.vsBot, initialRule: BoardRule.classic);
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _accentO,
