@@ -5,6 +5,31 @@ enum GameMode {
   ultimateVsBot,
 }
 
+enum BoardRule {
+  classic,
+  fifo,
+}
+
+extension BoardRuleExtension on BoardRule {
+  String get label {
+    switch (this) {
+      case BoardRule.classic:
+        return 'Classic';
+      case BoardRule.fifo:
+        return '3-Piece FIFO';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case BoardRule.classic:
+        return 'Standard Tic-Tac-Toe rules';
+      case BoardRule.fifo:
+        return 'Max 3 pieces per player. 4th move evicts oldest piece.';
+    }
+  }
+}
+
 enum BotDifficulty {
   easy,
   medium,
