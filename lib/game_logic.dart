@@ -2,6 +2,26 @@ import 'dart:collection';
 import 'dart:math';
 import 'game_mode.dart';
 
+class RelocateMove {
+  final int from;
+  final int to;
+  const RelocateMove(this.from, this.to);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RelocateMove &&
+          runtimeType == other.runtimeType &&
+          from == other.from &&
+          to == other.to;
+
+  @override
+  int get hashCode => from.hashCode ^ to.hashCode;
+
+  @override
+  String toString() => 'RelocateMove($from -> $to)';
+}
+
 class GameLogic {
   BoardRule rule;
   List<String?> board = List.filled(9, null);
@@ -12,6 +32,11 @@ class GameLogic {
   List<int> winningCells = [];
   bool isDraw = false;
   int? lastEvictedIndex;
+
+  // State for 3-Piece Relocate mode
+  int? selectedPiece;
+  int? lastMovedFromIndex;
+  int? lastMovedToIndex;
 
   int scoreX = 0;
   int scoreO = 0;
@@ -57,16 +82,124 @@ class GameLogic {
     return null;
   }
 
+  int pieceCount(String player) {
+    int count = 0;
+    for (int i = 0; i < 9; i++) {
+      if (board[i] == player) count++;
+    }
+    return count;
+  }
+
+  List<int> getPlayerPieces(String player) {
+    List<int> pieces = [];
+    for (int i = 0; i < 9; i++) {
+      if (board[i] == player) pieces.add(i);
+    }
+    return pieces;
+  }
+
+  List<int> get emptyCells {
+    List<int> empty = [];
+    for (int i = 0; i < 9; i++) {
+      if (board[i] == null) empty.add(i);
+    }
+    return empty;
+  }
+
+  bool isSelectedPiece(int index) => rule == BoardRule.relocate && selectedPiece == index;
+
+  bool canSelectPiece(int index) {
+    if (isGameOver || rule != BoardRule.relocate) return false;
+    if (pieceCount(currentPlayer) < 3) return false;
+    return board[index] == currentPlayer;
+  }
+
+  void selectPiece(int index) {
+    if (!canSelectPiece(index)) {
+      if (selectedPiece == index) {
+        selectedPiece = null;
+      }
+      return;
+    }
+    if (selectedPiece == index) {
+      selectedPiece = null;
+    } else {
+      selectedPiece = index;
+    }
+  }
+
+  bool canMovePiece(int from, int to) {
+    if (isGameOver || rule != BoardRule.relocate) return false;
+    if (board[from] != currentPlayer) return false;
+    if (board[to] != null) return false;
+    return true;
+  }
+
+  void movePiece(int from, int to) {
+    if (!canMovePiece(from, to)) return;
+
+    lastMovedFromIndex = from;
+    lastMovedToIndex = to;
+    lastEvictedIndex = null;
+
+    board[from] = null;
+    board[to] = currentPlayer;
+
+    final q = activeQueue;
+    q.remove(from);
+    q.add(to);
+
+    selectedPiece = null;
+
+    // Check for winner (evaluated AFTER relocation)
+    for (final pattern in _winPatterns) {
+      final a = pattern[0], b = pattern[1], c = pattern[2];
+      if (board[a] != null && board[a] == board[b] && board[b] == board[c]) {
+        winner = board[a];
+        winningCells = [a, b, c];
+        _updateScore();
+        return;
+      }
+    }
+
+    // Switch player
+    currentPlayer = currentPlayer == 'X' ? 'O' : 'X';
+  }
+
   bool canPlay(int index) {
-    return !isGameOver && board[index] == null;
+    if (isGameOver) return false;
+    if (rule == BoardRule.relocate) {
+      if (pieceCount(currentPlayer) < 3) {
+        return board[index] == null;
+      }
+      return board[index] == currentPlayer || (selectedPiece != null && board[index] == null);
+    }
+    return board[index] == null;
   }
 
   void play(int index) {
     if (!canPlay(index)) return;
 
     lastEvictedIndex = null;
+    lastMovedFromIndex = null;
+    lastMovedToIndex = null;
 
-    if (rule == BoardRule.fifo) {
+    if (rule == BoardRule.relocate) {
+      if (pieceCount(currentPlayer) < 3) {
+        if (board[index] != null) return;
+        activeQueue.add(index);
+        board[index] = currentPlayer;
+      } else {
+        if (board[index] == currentPlayer) {
+          selectPiece(index);
+          return;
+        } else if (selectedPiece != null && board[index] == null) {
+          movePiece(selectedPiece!, index);
+          return;
+        }
+        return;
+      }
+    } else if (rule == BoardRule.fifo) {
       final q = activeQueue;
       if (q.length >= 3) {
         lastEvictedIndex = q.removeFirst();
@@ -89,7 +222,7 @@ class GameLogic {
       }
     }
 
-    // Check for draw (only applicable in classic mode; in FIFO max 6 pieces exist)
+    // Check for draw (only applicable in classic mode; in FIFO and relocate max 6 pieces exist)
     if (rule == BoardRule.classic && board.every((cell) => cell != null)) {
       isDraw = true;
       scoreDraw++;
@@ -127,6 +260,9 @@ class GameLogic {
     winningCells = [];
     isDraw = false;
     lastEvictedIndex = null;
+    selectedPiece = null;
+    lastMovedFromIndex = null;
+    lastMovedToIndex = null;
   }
 
   void switchRule(BoardRule newRule) {
@@ -152,6 +288,42 @@ class GameLogic {
 
     // Medium: 35% random move
     if (difficulty == BotDifficulty.medium && rand.nextDouble() < 0.35) {
+      return availableMoves[rand.nextInt(availableMoves.length)];
+    }
+
+    // Relocate Mode placement logic (when Bot has < 3 pieces)
+    if (rule == BoardRule.relocate) {
+      final humanSymbol = botSymbol == 'X' ? 'O' : 'X';
+
+      // 1. Immediate win on placement
+      for (int move in availableMoves) {
+        board[move] = botSymbol;
+        if (_checkWinner(board) == botSymbol) {
+          board[move] = null;
+          return move;
+        }
+        board[move] = null;
+      }
+
+      // 2. Immediate block on human win
+      for (int move in availableMoves) {
+        board[move] = humanSymbol;
+        if (_checkWinner(board) == humanSymbol) {
+          board[move] = null;
+          return move;
+        }
+        board[move] = null;
+      }
+
+      // 3. Center
+      if (availableMoves.contains(4)) return 4;
+
+      // 4. Corners
+      final corners = [0, 2, 6, 8].where((c) => availableMoves.contains(c)).toList();
+      if (corners.isNotEmpty) {
+        return corners[rand.nextInt(corners.length)];
+      }
+
       return availableMoves[rand.nextInt(availableMoves.length)];
     }
 
@@ -396,5 +568,201 @@ class GameLogic {
       }
     }
     return null;
+  }
+
+  List<RelocateMove> getAvailableRelocateMoves(String player) {
+    final pieces = getPlayerPieces(player);
+    final empty = emptyCells;
+    List<RelocateMove> moves = [];
+    for (final from in pieces) {
+      for (final to in empty) {
+        moves.add(RelocateMove(from, to));
+      }
+    }
+    return moves;
+  }
+
+  bool _wouldWinRelocate(String player, RelocateMove move) {
+    board[move.from] = null;
+    board[move.to] = player;
+    final wins = _checkWinner(board) == player;
+    board[move.from] = player;
+    board[move.to] = null;
+    return wins;
+  }
+
+  RelocateMove? getBotRelocateMove(BotDifficulty difficulty, String botSymbol) {
+    final moves = getAvailableRelocateMoves(botSymbol);
+    if (moves.isEmpty) return null;
+
+    final rand = Random();
+
+    // Easy: 70% random move
+    if (difficulty == BotDifficulty.easy && rand.nextDouble() < 0.70) {
+      return moves[rand.nextInt(moves.length)];
+    }
+
+    // Medium: 35% random move
+    if (difficulty == BotDifficulty.medium && rand.nextDouble() < 0.35) {
+      return moves[rand.nextInt(moves.length)];
+    }
+
+    // 1. Immediate winning move for Bot
+    for (final move in moves) {
+      if (_wouldWinRelocate(botSymbol, move)) {
+        return move;
+      }
+    }
+
+    // 2. Immediate winning move for Human that Bot should block
+    final humanSymbol = botSymbol == 'X' ? 'O' : 'X';
+    final humanMoves = getAvailableRelocateMoves(humanSymbol);
+    RelocateMove? humanThreat;
+    for (final hMove in humanMoves) {
+      if (_wouldWinRelocate(humanSymbol, hMove)) {
+        humanThreat = hMove;
+        break;
+      }
+    }
+
+    if (humanThreat != null) {
+      for (final move in moves) {
+        if (move.to == humanThreat.to) {
+          board[move.from] = null;
+          board[move.to] = botSymbol;
+          bool stillLoses = false;
+          for (final remainingHMove in getAvailableRelocateMoves(humanSymbol)) {
+            if (_wouldWinRelocate(humanSymbol, remainingHMove)) {
+              stillLoses = true;
+              break;
+            }
+          }
+          board[move.from] = botSymbol;
+          board[move.to] = null;
+          if (!stillLoses) {
+            return move;
+          }
+        }
+      }
+    }
+
+    // 3. Minimax with alpha-beta pruning for strategic relocation
+    int bestScore = -10000;
+    RelocateMove bestMove = moves.first;
+
+    for (final move in moves) {
+      board[move.from] = null;
+      board[move.to] = botSymbol;
+
+      int score = _minimaxRelocate(
+        0,
+        false,
+        botSymbol,
+        humanSymbol,
+        3,
+        -10000,
+        10000,
+      );
+
+      board[move.from] = botSymbol;
+      board[move.to] = null;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    return bestMove;
+  }
+
+  int _minimaxRelocate(
+    int depth,
+    bool isMaximizing,
+    String botSymbol,
+    String humanSymbol,
+    int maxDepth,
+    int alpha,
+    int beta,
+  ) {
+    final currentWinner = _checkWinner(board);
+    if (currentWinner == botSymbol) return 100 - depth;
+    if (currentWinner == humanSymbol) return depth - 100;
+
+    if (depth >= maxDepth) {
+      return _evaluateRelocate(botSymbol, humanSymbol);
+    }
+
+    if (isMaximizing) {
+      int maxEval = -10000;
+      final moves = getAvailableRelocateMoves(botSymbol);
+      for (final move in moves) {
+        board[move.from] = null;
+        board[move.to] = botSymbol;
+
+        int eval = _minimaxRelocate(
+          depth + 1,
+          false,
+          botSymbol,
+          humanSymbol,
+          maxDepth,
+          alpha,
+          beta,
+        );
+
+        board[move.from] = botSymbol;
+        board[move.to] = null;
+
+        maxEval = max(maxEval, eval);
+        alpha = max(alpha, eval);
+        if (beta <= alpha) break;
+      }
+      return maxEval;
+    } else {
+      int minEval = 10000;
+      final moves = getAvailableRelocateMoves(humanSymbol);
+      for (final move in moves) {
+        board[move.from] = null;
+        board[move.to] = humanSymbol;
+
+        int eval = _minimaxRelocate(
+          depth + 1,
+          true,
+          botSymbol,
+          humanSymbol,
+          maxDepth,
+          alpha,
+          beta,
+        );
+
+        board[move.from] = humanSymbol;
+        board[move.to] = null;
+
+        minEval = min(minEval, eval);
+        beta = min(beta, eval);
+        if (beta <= alpha) break;
+      }
+      return minEval;
+    }
+  }
+
+  int _evaluateRelocate(String botSymbol, String humanSymbol) {
+    int score = 0;
+    for (final pattern in _winPatterns) {
+      int botCount = 0;
+      int humanCount = 0;
+      for (int idx in pattern) {
+        if (board[idx] == botSymbol) botCount++;
+        if (board[idx] == humanSymbol) humanCount++;
+      }
+      if (botCount > 0 && humanCount == 0) {
+        score += botCount == 2 ? 10 : 1;
+      } else if (humanCount > 0 && botCount == 0) {
+        score -= humanCount == 2 ? 10 : 1;
+      }
+    }
+    if (board[4] == botSymbol) score += 3;
+    if (board[4] == humanSymbol) score -= 3;
+    return score;
   }
 }

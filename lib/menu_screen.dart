@@ -6,6 +6,7 @@ import 'ultimate_game_screen.dart';
 enum BotGameVariant {
   classic,
   fifo,
+  relocate,
   ultimate,
 }
 
@@ -158,7 +159,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                 // Option 1: Classic 3x3
                 _buildVariantSelectCard(
                   title: 'Classic Tic Tac Toe',
-                  subtitle: 'Standard 3×3 grid • Fast & casual match (with 3-Piece FIFO mode)',
+                  subtitle: 'Standard 3×3 grid • Fast & casual match (with FIFO & Relocate modes)',
                   badgeText: 'Classic 3×3',
                   badgeColor: _accentX,
                   icon: Icons.grid_3x3_rounded,
@@ -546,6 +547,8 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                           _startGame(GameMode.ultimateVsBot);
                         } else if (_botGameVariant == BotGameVariant.fifo) {
                           _startGame(GameMode.vsBot, initialRule: BoardRule.fifo);
+                        } else if (_botGameVariant == BotGameVariant.relocate) {
+                          _startGame(GameMode.vsBot, initialRule: BoardRule.relocate);
                         } else {
                           _startGame(GameMode.vsBot, initialRule: BoardRule.classic);
                         }

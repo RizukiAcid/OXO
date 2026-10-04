@@ -137,8 +137,32 @@ class _GameScreenState extends State<GameScreen>
 
   void _onCellTap(int index) {
     if (_isBotThinking) return;
-    if (!_game.canPlay(index)) return;
     if (widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol) return;
+
+    if (_game.rule == BoardRule.relocate && _game.pieceCount(_game.currentPlayer) >= 3) {
+      if (_game.board[index] == _game.currentPlayer) {
+        setState(() {
+          _game.selectPiece(index);
+        });
+        _updatePulseState();
+        return;
+      }
+      if (_game.selectedPiece != null && _game.board[index] == null) {
+        final from = _game.selectedPiece!;
+        final to = index;
+        _executeRelocateMove(from, to);
+
+        if (widget.gameMode == GameMode.vsBot &&
+            !_game.isGameOver &&
+            _game.currentPlayer == _botSymbol) {
+          _scheduleBotMove();
+        }
+        return;
+      }
+      return;
+    }
+
+    if (!_game.canPlay(index)) return;
 
     _executeMove(index);
 
@@ -180,11 +204,40 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
+  void _executeRelocateMove(int from, int to) {
+    final wasGameOver = _game.isGameOver;
+    setState(() {
+      _game.movePiece(from, to);
+    });
+
+    _cellControllers[from].reset();
+    _cellControllers[to].forward(from: 0);
+
+    _updatePulseState();
+
+    if (!wasGameOver && _game.winner != null) {
+      if (widget.gameMode == GameMode.vsBot) {
+        if (_game.winner == _playerSymbol) {
+          _humanScore++;
+        } else {
+          _botScore++;
+        }
+      }
+      _winnerBannerController.forward(from: 0);
+    } else if (!wasGameOver && _game.isDraw) {
+      _boardShakeController.forward(from: 0);
+    }
+  }
+
   void _updatePulseState() {
-    final shouldPulse = _game.rule == BoardRule.fifo &&
+    final shouldPulseFifo = _game.rule == BoardRule.fifo &&
         !_game.isGameOver &&
         (_game.queueX.length >= 3 || _game.queueO.length >= 3);
-    if (shouldPulse) {
+    final shouldPulseRelocate = _game.rule == BoardRule.relocate &&
+        !_game.isGameOver &&
+        _game.selectedPiece != null;
+
+    if (shouldPulseFifo || shouldPulseRelocate) {
       if (!_pulseController.isAnimating) {
         _pulseController.repeat(reverse: true);
       }
@@ -210,9 +263,16 @@ class _GameScreenState extends State<GameScreen>
         return;
       }
 
-      final botMove = _game.getBotMove(widget.difficulty, _botSymbol);
-      if (botMove != -1 && _game.canPlay(botMove)) {
-        _executeMove(botMove);
+      if (_game.rule == BoardRule.relocate && _game.pieceCount(_botSymbol) >= 3) {
+        final botRelocateMove = _game.getBotRelocateMove(widget.difficulty, _botSymbol);
+        if (botRelocateMove != null) {
+          _executeRelocateMove(botRelocateMove.from, botRelocateMove.to);
+        }
+      } else {
+        final botMove = _game.getBotMove(widget.difficulty, _botSymbol);
+        if (botMove != -1 && _game.canPlay(botMove)) {
+          _executeMove(botMove);
+        }
       }
 
       if (mounted) {
@@ -318,7 +378,18 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildTopAppBar(String nextSymbol) {
-    final ruleTag = _game.rule == BoardRule.fifo ? ' • FIFO' : '';
+    final String ruleTag;
+    switch (_game.rule) {
+      case BoardRule.classic:
+        ruleTag = '';
+        break;
+      case BoardRule.fifo:
+        ruleTag = ' • FIFO';
+        break;
+      case BoardRule.relocate:
+        ruleTag = ' • RELOCATE';
+        break;
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -385,7 +456,7 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _buildModeToggle() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 28),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: _surfaceColor,
@@ -402,12 +473,22 @@ class _GameScreenState extends State<GameScreen>
               onTap: () => _onModeToggle(BoardRule.classic),
             ),
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: _buildToggleOption(
               label: '3-Piece FIFO',
               icon: Icons.all_inclusive_rounded,
               isSelected: _game.rule == BoardRule.fifo,
               onTap: () => _onModeToggle(BoardRule.fifo),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _buildToggleOption(
+              label: '3-Piece Relocate',
+              icon: Icons.open_with_rounded,
+              isSelected: _game.rule == BoardRule.relocate,
+              onTap: () => _onModeToggle(BoardRule.relocate),
             ),
           ),
         ],
@@ -428,7 +509,7 @@ class _GameScreenState extends State<GameScreen>
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         decoration: BoxDecoration(
           color: isSelected ? _accentX.withAlpha(45) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
@@ -446,25 +527,28 @@ class _GameScreenState extends State<GameScreen>
                 ]
               : [],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? Colors.white : Colors.white54,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : Colors.white60,
-                letterSpacing: 0.3,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isSelected ? Colors.white : Colors.white54,
               ),
-            ),
-          ],
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? Colors.white : Colors.white60,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -541,10 +625,29 @@ class _GameScreenState extends State<GameScreen>
     final isBotTurn = widget.gameMode == GameMode.vsBot && _game.currentPlayer == _botSymbol;
     final color = _playerColor(_game.currentPlayer);
     final has3Pieces = _game.rule == BoardRule.fifo && _game.activeQueue.length >= 3;
+    final isRelocate = _game.rule == BoardRule.relocate;
+    final pieceCount = _game.pieceCount(_game.currentPlayer);
 
     final String text;
     if (isBotTurn) {
-      text = has3Pieces ? "Bot is thinking (evicting oldest)..." : "Bot is thinking...";
+      if (isRelocate && pieceCount >= 3) {
+        text = "Bot is thinking (relocating marker)...";
+      } else if (has3Pieces) {
+        text = "Bot is thinking (evicting oldest)...";
+      } else {
+        text = "Bot is thinking...";
+      }
+    } else if (isRelocate) {
+      final pLabel = widget.gameMode == GameMode.vsBot
+          ? "Your turn ($_playerSymbol)"
+          : "${_game.currentPlayer}'s turn";
+      if (pieceCount < 3) {
+        text = "$pLabel • Place marker (${pieceCount + 1}/3)";
+      } else if (_game.selectedPiece == null) {
+        text = "$pLabel • Tap a marker to relocate";
+      } else {
+        text = "$pLabel • Tap an empty cell to move";
+      }
     } else if (widget.gameMode == GameMode.vsBot) {
       text = has3Pieces
           ? "Your turn ($_playerSymbol) • Next move evicts oldest"
@@ -563,35 +666,35 @@ class _GameScreenState extends State<GameScreen>
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: color.withAlpha(80), width: 1),
       ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isBotTurn) ...[
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(color),
-                ),
-              ),
-              const SizedBox(width: 10),
-            ],
-            Flexible(
-              child: Text(
-                text,
-                style: TextStyle(
-                  fontSize: has3Pieces ? 12 : 14,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                  letterSpacing: 0.5,
-                ),
-                overflow: TextOverflow.ellipsis,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isBotTurn) ...[
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
             ),
+            const SizedBox(width: 10),
           ],
-        ),
-      );
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: (has3Pieces || isRelocate) ? 12 : 14,
+                fontWeight: FontWeight.w600,
+                color: color,
+                letterSpacing: 0.5,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildBoard(double size) {
@@ -629,9 +732,27 @@ class _GameScreenState extends State<GameScreen>
     final isOldest = _game.isOldestPiece(index);
     final isCurrentOldest = _game.isCurrentPlayerOldest(index);
 
+    // Relocate mode indicators
+    final isRelocate = _game.rule == BoardRule.relocate;
+    final isSelected = isRelocate && _game.selectedPiece == index;
+    final isRelocatePhase = isRelocate && !_game.isGameOver && _game.pieceCount(_game.currentPlayer) >= 3;
+    final isSelectable = isRelocatePhase && value == _game.currentPlayer && !isSelected;
+    final isValidTarget = isRelocate && !_game.isGameOver && _game.selectedPiece != null && value == null;
+
     // Border logic for grid lines
     final showRight = col < 2;
     final showBottom = row < 2;
+
+    Color cellBgColor = Colors.transparent;
+    if (isWinCell) {
+      cellBgColor = color.withAlpha(25);
+    } else if (isSelected) {
+      cellBgColor = color.withAlpha(45);
+    } else if (isOldest && !_game.isGameOver) {
+      cellBgColor = color.withAlpha(isCurrentOldest ? 18 : 8);
+    } else if (isValidTarget) {
+      cellBgColor = _playerColor(_game.currentPlayer).withAlpha(15);
+    }
 
     return GestureDetector(
       key: ValueKey('cell_$index'),
@@ -647,16 +768,12 @@ class _GameScreenState extends State<GameScreen>
                 ? BorderSide(color: _lineColor, width: 2)
                 : BorderSide.none,
           ),
-          color: isWinCell
-              ? color.withAlpha(25)
-              : (isOldest && !_game.isGameOver)
-                  ? color.withAlpha(isCurrentOldest ? 18 : 8)
-                  : Colors.transparent,
+          color: cellBgColor,
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Warning badge on oldest piece
+            // Warning badge on oldest piece (FIFO mode)
             if (isOldest && !_game.isGameOver && value != null)
               Positioned(
                 top: 8,
@@ -694,15 +811,61 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
 
+            // Relocate mode: Selected piece badge
+            if (isSelected && !_game.isGameOver)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(50),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: color, width: 1.2),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.touch_app_rounded, size: 9, color: color),
+                      const SizedBox(width: 2),
+                      Text(
+                        'MOVE',
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Relocate mode: Selectable marker subtle hint
+            if (isSelectable)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Icon(
+                  Icons.pan_tool_alt_outlined,
+                  size: 11,
+                  color: color.withAlpha(120),
+                ),
+              ),
+
+            // Cell content (symbol or empty hint / valid target)
             Center(
               child: value != null
                   ? ScaleTransition(
                       scale: _cellScales[index],
-                      child: _buildSymbol(value, isWinCell, isOldest, isCurrentOldest),
+                      child: _buildSymbol(value, isWinCell, isOldest, isCurrentOldest, isSelected),
                     )
-                  : _game.isGameOver
-                      ? const SizedBox.shrink()
-                      : _buildEmptyHint(),
+                  : isValidTarget
+                      ? _buildValidTargetHint(_playerColor(_game.currentPlayer))
+                      : _game.isGameOver
+                          ? const SizedBox.shrink()
+                          : _buildEmptyHint(),
             ),
           ],
         ),
@@ -710,9 +873,34 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  Widget _buildSymbol(String value, bool isWinCell, bool isOldest, bool isCurrentOldest) {
+  Widget _buildValidTargetHint(Color color) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: color.withAlpha((_pulseAnimation.value * 255).round()),
+          width: 2,
+        ),
+        color: color.withAlpha(20),
+      ),
+      child: Center(
+        child: Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSymbol(String value, bool isWinCell, bool isOldest, bool isCurrentOldest, bool isSelected) {
     final color = _playerColor(value);
-    final double opacity = isWinCell
+    final double opacity = isWinCell || isSelected
         ? 1.0
         : isCurrentOldest
             ? _pulseAnimation.value

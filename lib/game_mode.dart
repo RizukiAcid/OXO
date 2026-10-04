@@ -8,6 +8,7 @@ enum GameMode {
 enum BoardRule {
   classic,
   fifo,
+  relocate,
 }
 
 extension BoardRuleExtension on BoardRule {
@@ -17,6 +18,8 @@ extension BoardRuleExtension on BoardRule {
         return 'Classic';
       case BoardRule.fifo:
         return '3-Piece FIFO';
+      case BoardRule.relocate:
+        return '3-Piece Relocate';
     }
   }
 
@@ -26,6 +29,8 @@ extension BoardRuleExtension on BoardRule {
         return 'Standard Tic-Tac-Toe rules';
       case BoardRule.fifo:
         return 'Max 3 pieces per player. 4th move evicts oldest piece.';
+      case BoardRule.relocate:
+        return 'Max 3 pieces per player. Move any existing marker to an empty field.';
     }
   }
 }
